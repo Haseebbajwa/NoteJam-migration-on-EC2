@@ -21,3 +21,11 @@ Logs: Cloudwatch for app logs as well as S3.
 Execute CloudFormation templates located in Deployment folder. Please note that you also need to specify all parameters when deploying.
 
 architecture can be found in the Architecture folder in this repo.
+
+CF template will be deployed in following order
+
+1. VPC
+2. ALB
+3. RDS
+4. ASG
+5. Cloud Watch
