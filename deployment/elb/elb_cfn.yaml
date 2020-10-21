@@ -1,0 +1,119 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Notejam ELB
+
+Parameters:
+  VpcStackName:
+    Description: VPC Cloudformation stack name
+    Type: String
+
+  Env:
+    Description: Environment name
+    Type: String
+    AllowedValues:
+      - production
+      - development
+      - testing
+
+Conditions:
+  isDevEnv: !Equals [ !Ref Env, development ]
+  isNotDevEnv: !Or [ !Equals [!Ref Env, testing ], !Equals [!Ref Env, production ]]
+
+Resources:
+  ElbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: isNotDevEnv
+    Properties:
+      GroupDescription: "Security Group for Elastic Load Balancer"
+      VpcId:
+        Fn::ImportValue: !Sub "${VpcStackName}-vpc"
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: '-1'
+      SecurityGroupIngress:
+        - IpProtocol: TCP
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "elb-${Env}-sg-${AWS::StackName}"
+        - Key: Env
+          Value: !Ref Env
+
+  ElbToNodesSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: isNotDevEnv
+    Properties:
+      GroupDescription: "Security Group for EC2 instances"
+      VpcId:
+        Fn::ImportValue: !Sub "${VpcStackName}-vpc"
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: '-1'
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !Ref ElbSecurityGroup
+          IpProtocol: TCP
+          FromPort: 5000
+          ToPort: 5000
+      Tags:
+        - Key: Name
+          Value: !Sub "ec2-${Env}-sg-${AWS::StackName}"
+        - Key: Env
+          Value: !Ref Env
+
+  Elb:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Condition: isNotDevEnv
+    Properties:
+      SecurityGroups:
+        - !Ref ElbSecurityGroup
+      Scheme: internet-facing
+      Subnets:
+        - Fn::ImportValue: !Sub "${VpcStackName}-public-subnet1"
+        - Fn::ImportValue: !Sub "${VpcStackName}-public-subnet2"
+        - Fn::ImportValue: !Sub "${VpcStackName}-public-subnet3"
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '5000'
+          Protocol: HTTP
+      HealthCheck:
+        Target: "HTTP:5000/signin/"
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '3'
+        Interval: '10'
+        Timeout: '5'
+      CrossZone: true
+      ConnectionSettings:
+        IdleTimeout: 60
+      ConnectionDrainingPolicy:
+        Enabled: true
+        Timeout: 300
+      Tags:
+        - Key: Name
+          Value: !Sub "elb-${Env}-${AWS::StackName}"
+        - Key: Env
+          Value: !Ref Env
+
+Outputs:
+  Elb:
+    Condition: isNotDevEnv
+    Description: The ID of Elastic Load Balancer.
+    Value: !Ref Elb
+    Export:
+      Name: !Sub "${AWS::StackName}-elb-${Env}"
+
+  ElbSecurityGroup:
+    Condition: isNotDevEnv
+    Description: The ID of ELB Security Group.
+    Value: !Ref ElbSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-elb-${Env}-sg"
+
+  ElbToNodesSecurityGroup:
+    Condition: isNotDevEnv
+    Description: The ID of EC2 Security Group.
+    Value: !Ref ElbToNodesSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-node-${Env}-sg"
